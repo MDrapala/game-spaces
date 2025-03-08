@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0A0E1A;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.stars-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.star {
+  position: absolute;
+  background-color: white;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+
+.enemy {
+  cursor: pointer;
+  transition: transform 0.1s ease-in-out;
+}
+
+.enemy:hover {
+  transform: scale(1.05);
+}
+
+.enemy:active {
+  transform: scale(0.95);
+}
+
+.pulse-effect {
+  animation: pulse 0.5s cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Animation de tir */
+.laser {
+  position: absolute;
+  background: linear-gradient(to bottom, #00FFFF, #00BFFF);
+  transform-origin: top center;
+  animation: laser-pulse 0.3s linear;
+  z-index: 10;
+}
+
+@keyframes laser-pulse {
+  0% {
+    opacity: 0.7;
+    height: 0;
+  }
+  50% {
+    opacity: 1;
+    height: 100%;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+
+/* Animation de gain de ressources */
+.resource-gain {
+  position: absolute;
+  animation: float-up 1.5s ease-out forwards;
+  pointer-events: none;
+  z-index: 20;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+}

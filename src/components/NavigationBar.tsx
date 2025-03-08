@@ -2,13 +2,7 @@
 import React from "react";
 import { useSound } from "../contexts/SoundContext";
 
-type NavPage =
-  | "game"
-  | "hangar"
-  | "missions"
-  | "upgrades"
-  | "shop"
-  | "settings";
+type NavPage = "" | "hangar" | "missions" | "upgrades" | "shop" | "settings";
 
 interface NavigationBarProps {
   currentPage: NavPage;
@@ -29,7 +23,7 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
   };
 
   const navItems: { id: NavPage; label: string; icon: string }[] = [
-    { id: "game", label: "Jeu", icon: "🚀" },
+    { id: "", label: "Jeu", icon: "🚀" },
     { id: "hangar", label: "Hangar", icon: "🛠️" },
     { id: "missions", label: "Missions", icon: "📋" },
     { id: "upgrades", label: "Améliorations", icon: "⚡" },

@@ -6,7 +6,11 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { Howl } from "howler";
+
+// Définir l'interface pour le navigateur avec webkitAudioContext
+interface WindowWithWebkitAudio extends Window {
+  webkitAudioContext: typeof AudioContext;
+}
 
 // Types pour les sons
 type SoundType =
@@ -29,23 +33,6 @@ interface SoundContextType {
 // Création du contexte
 const SoundContext = createContext<SoundContextType | undefined>(undefined);
 
-// Sources des sons (à remplacer par vos fichiers réels)
-const SOUND_SOURCES: Record<SoundType, string> = {
-  click:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  hit: "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  explosion:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  levelUp:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  buyUpgrade:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  waveComplete:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-  buttonClick:
-    "data:audio/wav;base64,UklGRl9CAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVtCAACA",
-};
-
 // Provider pour le contexte de son
 export const SoundProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -60,50 +47,95 @@ export const SoundProvider: React.FC<{ children: ReactNode }> = ({
     return savedVolume ? parseFloat(savedVolume) : 0.5;
   });
 
-  const [sounds, setSounds] = useState<Record<SoundType, Howl | null>>({
-    click: null,
-    hit: null,
-    explosion: null,
-    levelUp: null,
-    buyUpgrade: null,
-    waveComplete: null,
-    buttonClick: null,
-  });
+  // Fonction pour créer un son avec Web Audio API
+  const playSoundEffect = (type: SoundType) => {
+    if (isMuted) return;
 
-  // Initialiser les sons
-  useEffect(() => {
-    const loadedSounds: Record<SoundType, Howl> = {} as Record<SoundType, Howl>;
+    try {
+      // Créer un contexte audio avec le bon typage
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as WindowWithWebkitAudio).webkitAudioContext;
+      const audioContext = new AudioContextClass();
 
-    Object.entries(SOUND_SOURCES).forEach(([key, src]) => {
-      loadedSounds[key as SoundType] = new Howl({
-        src: [src],
-        volume: volume,
-        mute: isMuted,
-      });
-    });
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
 
-    setSounds(loadedSounds);
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
 
-    // Nettoyage
-    return () => {
-      Object.values(loadedSounds).forEach((sound) => {
-        sound.unload();
-      });
-    };
-  }, []);
+      // Régler le volume global
+      gainNode.gain.value = volume;
 
-  // Mettre à jour le volume et l'état muet des sons
-  useEffect(() => {
-    Object.values(sounds).forEach((sound) => {
-      if (sound) {
-        sound.volume(volume);
-        sound.mute(isMuted);
+      // Différentes fréquences et durées selon le type de son
+      switch (type) {
+        case "click":
+          oscillator.type = "sine";
+          oscillator.frequency.value = 440; // La
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.1);
+          break;
+        case "hit":
+          oscillator.type = "sine";
+          oscillator.frequency.value = 659; // Mi
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.15);
+          break;
+        case "explosion":
+          oscillator.type = "sawtooth";
+          oscillator.frequency.value = 220; // La grave
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.3);
+          break;
+        case "levelUp":
+          // Son ascendant
+          oscillator.type = "square";
+          oscillator.frequency.value = 440;
+          oscillator.start();
+          oscillator.frequency.linearRampToValueAtTime(
+            880,
+            audioContext.currentTime + 0.5
+          );
+          oscillator.stop(audioContext.currentTime + 0.5);
+          break;
+        case "buyUpgrade":
+          oscillator.type = "sine";
+          oscillator.frequency.value = 523; // Do
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.2);
+          break;
+        case "waveComplete":
+          oscillator.type = "sine";
+          oscillator.frequency.value = 784; // Sol
+          oscillator.start();
+          oscillator.frequency.linearRampToValueAtTime(
+            1047,
+            audioContext.currentTime + 0.3
+          ); // Do aigu
+          oscillator.stop(audioContext.currentTime + 0.3);
+          break;
+        case "buttonClick":
+          oscillator.type = "sine";
+          oscillator.frequency.value = 392; // Sol grave
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.08);
+          break;
+        default:
+          oscillator.type = "sine";
+          oscillator.frequency.value = 440;
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.1);
       }
-    });
+    } catch (error) {
+      console.error("Erreur lors de la lecture du son:", error);
+    }
+  };
 
+  // Mettre à jour le volume et l'état muet dans le stockage local
+  useEffect(() => {
     localStorage.setItem("spaceclicker-muted", JSON.stringify(isMuted));
     localStorage.setItem("spaceclicker-volume", volume.toString());
-  }, [isMuted, volume, sounds]);
+  }, [isMuted, volume]);
 
   // Fonction pour activer/désactiver le son
   const toggleMute = () => {
@@ -117,9 +149,7 @@ export const SoundProvider: React.FC<{ children: ReactNode }> = ({
 
   // Fonction pour jouer un son
   const playSound = (sound: SoundType) => {
-    if (!isMuted && sounds[sound]) {
-      sounds[sound]?.play();
-    }
+    playSoundEffect(sound);
   };
 
   return (

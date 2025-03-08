@@ -1,32 +1,16 @@
 // src/components/WaveIndicator.tsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 interface WaveIndicatorProps {
   currentWave: number;
 }
 
 const WaveIndicator: React.FC<WaveIndicatorProps> = ({ currentWave }) => {
-  const [isVisible, setIsVisible] = useState(false);
-
-  // Afficher l'indicateur pendant quelques secondes lors du changement de vague
-  useEffect(() => {
-    setIsVisible(true);
-
-    const timeout = setTimeout(() => {
-      setIsVisible(false);
-    }, 3000);
-
-    return () => clearTimeout(timeout);
-  }, [currentWave]);
-
   return (
-    <div
-      className={`absolute top-20 left-1/2 transform -translate-x-1/2 bg-space-light-blue px-6 py-3 rounded-lg transition-opacity duration-500 pointer-events-none z-10 ${
-        isVisible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      <div className="text-xl text-white font-bold text-center">
-        Vague {currentWave}
+    <div className="absolute top-4 left-4 bg-space-blue px-4 py-2 rounded-lg text-white z-10">
+      <div className="flex items-center space-x-2">
+        <span>Vague:</span>
+        <span className="text-space-gold font-bold">{currentWave}</span>
       </div>
     </div>
   );

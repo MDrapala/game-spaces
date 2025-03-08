@@ -3,11 +3,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGameStore } from "../store/gameStore";
 import { useSound } from "../contexts/SoundContext";
-import ResourceBar from "../components/ResourceBar";
+import NavigationBar from "../components/NavigationBar";
 import EnemyShip from "../components/EnemyShip";
 import PlayerBase from "../components/PlayerBase";
 import WaveIndicator from "../components/WaveIndicator";
-import NavigationBar from "../components/NavigationBar";
+import ResourceBar from "../components/ResourceBar";
 
 const GameScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -15,20 +15,28 @@ const GameScreen: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const animationFrameRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
 
-  // Récupérer l'état du jeu
+  // Récupérer l'état du jeu avec la structure existante
   const {
     enemies,
     currentWave,
     waveInProgress,
     startWave,
-    clickAttack,
-    updateEnemies,
+    shootEnemy,
+    updateEnemyPositions,
     playerLevel,
-    credits,
-    minerals,
-    energy,
+    coins,
+    gems,
+    spaceships,
+    currentSpaceshipId,
+    clickAttack,
   } = useGameStore();
+
+  // Trouver le vaisseau actuel
+  const currentShip = spaceships.find((s) => s.id === currentSpaceshipId);
+  // Obtenir l'énergie (santé du vaisseau)
+  const energy = currentShip ? currentShip.health : 0;
 
   // Mettre à jour les dimensions du canvas
   useEffect(() => {
@@ -49,16 +57,16 @@ const GameScreen: React.FC = () => {
 
   // Boucle de jeu principale
   useEffect(() => {
-    let lastTime = 0;
     const gameLoop = (time: number) => {
       // Convertir en secondes
       const now = time / 1000;
-      const deltaTime = now - lastTime;
-      lastTime = now;
+      const deltaTime =
+        lastTimeRef.current === 0 ? 0 : now - lastTimeRef.current;
+      lastTimeRef.current = now;
 
-      // Mettre à jour les ennemis
+      // Mettre à jour les ennemis avec la fonction existante
       if (waveInProgress && deltaTime > 0) {
-        updateEnemies();
+        updateEnemyPositions(deltaTime);
       }
 
       animationFrameRef.current = requestAnimationFrame(gameLoop);
@@ -68,8 +76,9 @@ const GameScreen: React.FC = () => {
 
     return () => {
       cancelAnimationFrame(animationFrameRef.current);
+      lastTimeRef.current = 0;
     };
-  }, [waveInProgress, updateEnemies]);
+  }, [waveInProgress, updateEnemyPositions]);
 
   // Démarrer une vague automatiquement si aucune n'est en cours
   useEffect(() => {
@@ -82,7 +91,39 @@ const GameScreen: React.FC = () => {
     }
   }, [waveInProgress, enemies, startWave]);
 
-  // Gestionnaire de clic sur l'écran
+  // Système de tir automatique des tourelles
+  useEffect(() => {
+    if (!waveInProgress || enemies.length === 0) return;
+
+    // Récupérer les tourelles actives
+    const activeTurrets = useGameStore.getState().getCurrentActiveTurrets();
+
+    // Créer un intervalle pour chaque tourelle
+    const intervals = activeTurrets.map((turret) => {
+      // Calculer l'intervalle en millisecondes basé sur le taux de tir
+      const fireInterval = 1000 / turret.fireRate;
+
+      return setInterval(() => {
+        if (enemies.length > 0) {
+          // Trouver l'ennemi le plus avancé (plus proche du côté gauche)
+          const target = [...enemies].sort(
+            (a, b) => a.position.x - b.position.x
+          )[0];
+
+          if (target) {
+            shootEnemy(target.id, turret.damage);
+            playSound("hit");
+          }
+        }
+      }, fireInterval);
+    });
+
+    return () => {
+      intervals.forEach((interval) => clearInterval(interval));
+    };
+  }, [waveInProgress, enemies, shootEnemy, playSound]);
+
+  // Gestionnaire de clic sur le canvas
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
@@ -94,12 +135,21 @@ const GameScreen: React.FC = () => {
     }
   };
 
+  // Fonction pour gérer le clic sur un ennemi spécifique
+  const handleEnemyClick = (enemyId: string) => {
+    const enemy = enemies.find((e) => e.id === enemyId);
+    if (enemy) {
+      clickAttack(enemy.position.x, enemy.position.y);
+      playSound("hit");
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen">
       {/* Barre de ressources */}
       <ResourceBar
-        credits={credits}
-        minerals={minerals}
+        credits={coins}
+        minerals={gems}
         energy={energy}
         playerLevel={playerLevel}
       />
@@ -136,14 +186,14 @@ const GameScreen: React.FC = () => {
           <EnemyShip
             key={enemy.id}
             enemy={enemy}
-            onClick={() => clickAttack(enemy.position.x, enemy.position.y)}
+            onClick={() => handleEnemyClick(enemy.id)}
           />
         ))}
       </div>
 
       {/* Barre de navigation */}
       <NavigationBar
-        currentPage="game"
+        currentPage=""
         onNavigate={(page) => navigate(`/${page}`)}
       />
     </div>

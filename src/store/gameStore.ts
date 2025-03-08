@@ -3,8 +3,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { v4 as uuidv4 } from "uuid";
 
-// Types
-export type EnemyType = "basic" | "medium" | "advanced";
+// Types pour les ennemis
+export type EnemyType = "small" | "medium" | "large" | "boss";
 
 export interface Enemy {
   id: string;
@@ -12,89 +12,95 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   speed: number;
-  value: number;
+  value: number; // Montant d'argent gagné en le tuant
+  expValue: number; // Expérience gagnée
   size: number;
   position: {
     x: number;
     y: number;
   };
+  isBoss: boolean;
 }
 
-export interface Reward {
-  credits: number;
-  minerals: number;
-  energy: number;
+// Types pour les tourelles
+export interface Turret {
+  id: string;
+  name: string;
+  level: number;
+  damage: number;
+  fireRate: number; // Tirs par seconde
+  cost: number; // Coût pour acheter
+  upgradeCost: number; // Coût pour améliorer
+  unlocked: boolean;
 }
 
+// Types pour les vaisseaux
+export interface Spaceship {
+  id: string;
+  name: string;
+  maxTurrets: number;
+  health: number;
+  gemCost: number; // Coût en gemmes pour débloquer
+  unlocked: boolean;
+  activeTurrets: string[]; // IDs des tourelles installées
+}
+
+// Types pour les missions
 export interface Mission {
   id: string;
   title: string;
   description: string;
+  type: "kill" | "wave" | "upgrade" | "purchase";
   target: number;
   progress: number;
-  reward: Reward;
-  type: "destroy" | "wave" | "credits";
-  completed: boolean;
-}
-
-export interface GameStats {
-  totalClicks: number;
-  enemiesDestroyed: number;
-  wavesCompleted: number;
-  creditsEarned: number;
-  timeSpent: number;
-}
-
-export interface Ship {
-  id: string;
-  name: string;
-  type: "defense" | "attack" | "mining";
-  level: number;
-  cost: number;
-  damage?: number;
-  fireRate?: number;
-  health?: number;
-  production?: {
-    resource: "credits" | "minerals" | "energy";
-    amount: number;
-    interval: number;
+  reward: {
+    coins: number;
+    gems: number;
+    exp: number;
   };
-  unlocked: boolean;
+  completed: boolean;
+  expiresAt: string; // Date d'expiration (fin de journée)
 }
 
+// Types pour les statistiques
+export interface GameStats {
+  totalKills: number;
+  totalWavesCompleted: number;
+  highestWave: number;
+  coinsEarned: number;
+  timeSpent: number;
+  offlineProgress: {
+    lastSeen: string;
+    coinsPerMinute: number;
+    expPerMinute: number;
+  };
+}
+
+// État du jeu
 export interface GameState {
-  // État du joueur
+  // Données joueur
+  playerName: string;
   playerLevel: number;
-  playerXp: number;
-  playerXpToNextLevel: number;
+  playerExp: number;
+  expToNextLevel: number;
+  coins: number;
+  gems: number;
 
-  // Ressources
-  credits: number;
-  minerals: number;
-  energy: number;
-
-  // État du jeu
-  enemies: Enemy[];
+  // Vagues
   currentWave: number;
+  currentEnemiesKilled: number;
+  enemiesPerWave: number;
   waveInProgress: boolean;
-  waveCompleted: number;
 
-  // Amélioration automatiques
-  autoClickers: number;
-  autoClickerDamage: number;
-  autoClickInterval: number;
-
-  // Améliorations de clics manuels
-  clickDamage: number;
-  clickMultiplier: number;
-
-  // Vaisseaux
-  ships: Ship[];
-  activeShips: string[];
+  // Entités de jeu
+  enemies: Enemy[];
+  spaceships: Spaceship[];
+  currentSpaceshipId: string; // Vaisseau actif
+  turrets: Turret[];
 
   // Missions
   dailyMissions: Mission[];
-  lastMissionRefresh: string | null;
+  lastMissionsRefresh: string | null;
 
   // Statistiques
   stats: GameStats;
@@ -102,58 +108,181 @@ export interface GameState {
   // Actions
   initializeGame: () => void;
   startWave: () => void;
-  clickAttack: (x: number, y: number) => void;
-  updateEnemies: () => void;
   completeWave: () => void;
-  purchaseUpgrade: (
-    type: "clickDamage" | "clickMultiplier" | "autoClicker",
-    level?: number
-  ) => boolean;
+  shootEnemy: (enemyId: string, damage: number) => void;
+  upgradeTurret: (turretId: string) => boolean;
+  purchaseTurret: (turretId: string) => boolean;
+  purchaseSpaceship: (spaceshipId: string) => boolean;
+  switchSpaceship: (spaceshipId: string) => void;
+  installTurret: (turretId: string, spaceshipId: string) => boolean;
+  removeTurret: (turretId: string, spaceshipId: string) => boolean;
   updateMissionProgress: (
-    type: "destroy" | "wave" | "credits",
+    type: "kill" | "wave" | "upgrade" | "purchase",
     amount: number
   ) => void;
   claimMissionReward: (missionId: string) => boolean;
-  addExperience: (amount: number) => void;
-  purchaseShip: (shipId: string) => boolean;
-  upgradeShip: (shipId: string) => boolean;
-  activateShip: (shipId: string) => void;
-  deactivateShip: (shipId: string) => void;
+  addPlayerExp: (amount: number) => void;
+  calculateOfflineProgress: (lastSeenTime: string) => {
+    coins: number;
+    exp: number;
+    time: number;
+  };
+  addCoins: (amount: number) => void;
+  addGems: (amount: number) => void;
+  updateEnemyPositions: (deltaTime: number) => void;
+  getCurrentActiveTurrets: () => Turret[];
+  checkTurretUnlocks: (level: number) => void;
+  clickAttack: (x: number, y: number) => void;
 }
+
+// Tourelles initiales
+const initialTurrets: Turret[] = [
+  {
+    id: "basic-turret",
+    name: "Tourelle basique",
+    level: 1,
+    damage: 10,
+    fireRate: 1.0,
+    cost: 100,
+    upgradeCost: 50,
+    unlocked: true,
+  },
+  {
+    id: "rapid-turret",
+    name: "Tourelle rapide",
+    level: 1,
+    damage: 5,
+    fireRate: 3.0,
+    cost: 500,
+    upgradeCost: 250,
+    unlocked: false,
+  },
+  {
+    id: "heavy-turret",
+    name: "Tourelle lourde",
+    level: 1,
+    damage: 30,
+    fireRate: 0.5,
+    cost: 1000,
+    upgradeCost: 500,
+    unlocked: false,
+  },
+  {
+    id: "missile-launcher",
+    name: "Lance-missiles",
+    level: 1,
+    damage: 50,
+    fireRate: 0.3,
+    cost: 2000,
+    upgradeCost: 1000,
+    unlocked: false,
+  },
+];
+
+// Vaisseaux initiaux
+const initialSpaceships: Spaceship[] = [
+  {
+    id: "starter-ship",
+    name: "Vaisseau de départ",
+    maxTurrets: 2,
+    health: 100,
+    gemCost: 0,
+    unlocked: true,
+    activeTurrets: ["basic-turret"],
+  },
+  {
+    id: "advanced-ship",
+    name: "Vaisseau avancé",
+    maxTurrets: 3,
+    health: 200,
+    gemCost: 50,
+    unlocked: false,
+    activeTurrets: [],
+  },
+  {
+    id: "commander-ship",
+    name: "Vaisseau de commandement",
+    maxTurrets: 4,
+    health: 350,
+    gemCost: 150,
+    unlocked: false,
+    activeTurrets: [],
+  },
+  {
+    id: "battleship",
+    name: "Cuirassé",
+    maxTurrets: 6,
+    health: 500,
+    gemCost: 300,
+    unlocked: false,
+    activeTurrets: [],
+  },
+];
 
 // Générer un nouvel ennemi
 const createEnemy = (type: EnemyType | null, wave: number): Enemy => {
+  const screenWidth = window.innerWidth;
+
   const types: Record<
     EnemyType,
-    { health: number; speed: number; value: number; size: number }
+    {
+      health: number;
+      speed: number;
+      value: number;
+      expValue: number;
+      size: number;
+    }
   > = {
-    basic: {
-      health: 2 + Math.floor(wave / 5),
-      speed: 1 + wave * 0.1,
-      value: 10 + wave * 2,
-      size: 1,
+    small: {
+      health: Math.ceil(5 * Math.pow(1.1, wave)),
+      speed: 2 + Math.min(wave * 0.1, 5),
+      value: 1 + Math.floor(wave / 5),
+      expValue: 5 + Math.floor(wave / 3),
+      size: 0.6,
     },
     medium: {
-      health: 4 + Math.floor(wave / 3),
-      speed: 0.8 + wave * 0.08,
-      value: 25 + wave * 3,
+      health: Math.ceil(15 * Math.pow(1.1, wave)),
+      speed: 1.5 + Math.min(wave * 0.08, 4),
+      value: 3 + Math.floor(wave / 3),
+      expValue: 15 + Math.floor(wave / 2),
+      size: 0.8,
+    },
+    large: {
+      health: Math.ceil(40 * Math.pow(1.1, wave)),
+      speed: 1 + Math.min(wave * 0.05, 3),
+      value: 8 + Math.floor(wave * 0.8),
+      expValue: 40 + Math.floor(wave * 1.2),
       size: 1.2,
     },
-    advanced: {
-      health: 8 + Math.floor(wave / 2),
-      speed: 0.6 + wave * 0.06,
+    boss: {
+      health: Math.ceil(200 * Math.pow(1.1, wave)),
+      speed: 0.5 + Math.min(wave * 0.03, 2),
       value: 50 + wave * 5,
-      size: 1.5,
+      expValue: 200 + wave * 10,
+      size: 2,
     },
   };
 
-  const enemyType =
-    type ||
-    (Math.random() > 0.8
-      ? "advanced"
-      : Math.random() > 0.6
-      ? "medium"
-      : "basic");
+  // Déterminer le type d'ennemi en fonction de la vague
+  const isBossWave = wave % 10 === 0 && wave > 0;
+  let enemyType: EnemyType;
+
+  if (isBossWave) {
+    enemyType = "boss";
+  } else if (type) {
+    enemyType = type;
+  } else {
+    // Distribution selon la difficulté de la vague
+    const rand = Math.random();
+    if (rand < 0.5) {
+      enemyType = "small";
+    } else if (rand < 0.8) {
+      enemyType = "medium";
+    } else {
+      enemyType = "large";
+    }
+  }
+
   const enemyData = types[enemyType];
 
   return {
@@ -163,225 +292,163 @@ const createEnemy = (type: EnemyType | null, wave: number): Enemy => {
     maxHealth: enemyData.health,
     speed: enemyData.speed,
     value: enemyData.value,
+    expValue: enemyData.expValue,
     size: enemyData.size,
     position: {
-      x: 100 + Math.random() * 400, // Position aléatoire horizontale
-      y: -50, // Commence hors écran en haut
+      x: screenWidth + Math.random() * 100, // Démarre hors écran à droite
+      y: 100 + Math.random() * 200, // Position verticale aléatoire
     },
+    isBoss: enemyType === "boss",
   };
 };
 
 // Générer une vague d'ennemis
 const generateWave = (wave: number): Enemy[] => {
-  const enemyCount = 5 + Math.floor(wave * 1.5);
+  const isBossWave = wave % 10 === 0 && wave > 0;
+  const enemyCount = isBossWave ? 1 : 5 + Math.floor(wave / 2);
   const enemies: Enemy[] = [];
 
-  for (let i = 0; i < enemyCount; i++) {
-    // Plus on avance dans les vagues, plus on a de chance d'avoir des ennemis avancés
-    const advancedChance = Math.min(0.1 + wave * 0.02, 0.4);
-    const mediumChance = Math.min(0.3 + wave * 0.03, 0.6);
-
-    const rand = Math.random();
-    let type: EnemyType = "basic";
-
-    if (rand < advancedChance) {
-      type = "advanced";
-    } else if (rand < mediumChance) {
-      type = "medium";
+  if (isBossWave) {
+    enemies.push(createEnemy("boss", wave));
+  } else {
+    for (let i = 0; i < enemyCount; i++) {
+      enemies.push(createEnemy(null, wave));
     }
-
-    enemies.push(createEnemy(type, wave));
   }
 
   return enemies;
 };
 
-// Missions journalières
-const generateDailyMissions = (): Mission[] => {
+// Générer les missions journalières
+const generateDailyMissions = (playerLevel: number): Mission[] => {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999); // Expire à la fin de la journée
+
   const missions: Mission[] = [
     {
       id: uuidv4(),
-      title: "Détruire des vaisseaux ennemis",
-      description: "Détruire un certain nombre de vaisseaux ennemis",
-      target: 50 + Math.floor(Math.random() * 50),
+      title: "Extermination alien",
+      description: `Détruire ${50 + Math.floor(playerLevel / 5) * 10} ennemis`,
+      type: "kill",
+      target: 50 + Math.floor(playerLevel / 5) * 10,
       progress: 0,
       reward: {
-        credits: 500 + Math.floor(Math.random() * 300),
-        minerals: Math.floor(Math.random() * 200),
-        energy: 100 + Math.floor(Math.random() * 100),
+        coins: 500 + playerLevel * 100,
+        gems: 1 + Math.floor(playerLevel / 10),
+        exp: 200 + playerLevel * 50,
       },
-      type: "destroy",
       completed: false,
+      expiresAt: today.toISOString(),
     },
     {
       id: uuidv4(),
-      title: "Compléter des vagues",
-      description: "Compléter un certain nombre de vagues d'attaque",
-      target: 3 + Math.floor(Math.random() * 5),
-      progress: 0,
-      reward: {
-        credits: 800 + Math.floor(Math.random() * 400),
-        minerals: 200 + Math.floor(Math.random() * 150),
-        energy: Math.floor(Math.random() * 200),
-      },
+      title: "Maître des vagues",
+      description: `Compléter ${3 + Math.floor(playerLevel / 10)} vagues`,
       type: "wave",
+      target: 3 + Math.floor(playerLevel / 10),
+      progress: 0,
+      reward: {
+        coins: 750 + playerLevel * 150,
+        gems: 2 + Math.floor(playerLevel / 8),
+        exp: 350 + playerLevel * 70,
+      },
       completed: false,
+      expiresAt: today.toISOString(),
     },
     {
       id: uuidv4(),
-      title: "Collecter des ressources",
-      description: "Collecter une certaine quantité de crédits",
-      target: 2000 + Math.floor(Math.random() * 3000),
+      title: "Amélioration technologique",
+      description: "Améliorer vos tourelles 5 fois",
+      type: "upgrade",
+      target: 5,
       progress: 0,
       reward: {
-        credits: Math.floor(Math.random() * 500),
-        minerals: 300 + Math.floor(Math.random() * 200),
-        energy: 300 + Math.floor(Math.random() * 200),
+        coins: 1000 + playerLevel * 200,
+        gems: 3 + Math.floor(playerLevel / 5),
+        exp: 500 + playerLevel * 100,
       },
-      type: "credits",
       completed: false,
+      expiresAt: today.toISOString(),
     },
   ];
 
   return missions;
 };
 
-// Vaisseaux initiaux
-const initialShips: Ship[] = [
-  {
-    id: "defender-1",
-    name: "Défenseur",
-    type: "defense",
-    level: 1,
-    cost: 500,
-    damage: 1,
-    fireRate: 1.0,
-    health: 100,
-    unlocked: true,
-  },
-  {
-    id: "cruiser-1",
-    name: "Croiseur",
-    type: "attack",
-    level: 1,
-    cost: 1200,
-    damage: 3,
-    fireRate: 0.8,
-    health: 200,
-    unlocked: false,
-  },
-  {
-    id: "destroyer-1",
-    name: "Destructeur",
-    type: "attack",
-    level: 1,
-    cost: 3000,
-    damage: 5,
-    fireRate: 1.2,
-    health: 350,
-    unlocked: false,
-  },
-  {
-    id: "miner-1",
-    name: "Mineur",
-    type: "mining",
-    level: 1,
-    cost: 800,
-    health: 80,
-    production: {
-      resource: "minerals",
-      amount: 10,
-      interval: 5000, // 5 secondes
-    },
-    unlocked: false,
-  },
-  {
-    id: "collector-1",
-    name: "Collecteur",
-    type: "mining",
-    level: 1,
-    cost: 800,
-    health: 80,
-    production: {
-      resource: "credits",
-      amount: 5,
-      interval: 3000, // 3 secondes
-    },
-    unlocked: false,
-  },
-  {
-    id: "generator-1",
-    name: "Générateur",
-    type: "mining",
-    level: 1,
-    cost: 1000,
-    health: 80,
-    production: {
-      resource: "energy",
-      amount: 5,
-      interval: 4000, // 4 secondes
-    },
-    unlocked: false,
-  },
-];
-
 // Store principal du jeu
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
-      // État du joueur
+      // Données joueur
+      playerName: "Commandant",
       playerLevel: 1,
-      playerXp: 0,
-      playerXpToNextLevel: 1000,
+      playerExp: 0,
+      expToNextLevel: 1000,
+      coins: 500,
+      gems: 5,
 
-      // Ressources
-      credits: 500,
-      minerals: 200,
-      energy: 100,
-
-      // État du jeu
-      enemies: [],
+      // Vagues
       currentWave: 1,
+      currentEnemiesKilled: 0,
+      enemiesPerWave: 5,
       waveInProgress: false,
-      waveCompleted: 0,
 
-      // Amélioration automatiques
-      autoClickers: 0,
-      autoClickerDamage: 1,
-      autoClickInterval: 1000,
-
-      // Améliorations de clics manuels
-      clickDamage: 1,
-      clickMultiplier: 1,
-
-      // Vaisseaux
-      ships: initialShips,
-      activeShips: [],
+      // Entités de jeu
+      enemies: [],
+      spaceships: initialSpaceships,
+      currentSpaceshipId: "starter-ship",
+      turrets: initialTurrets,
 
       // Missions
       dailyMissions: [],
-      lastMissionRefresh: null,
+      lastMissionsRefresh: null,
 
       // Statistiques
       stats: {
-        totalClicks: 0,
-        enemiesDestroyed: 0,
-        wavesCompleted: 0,
-        creditsEarned: 0,
+        totalKills: 0,
+        totalWavesCompleted: 0,
+        highestWave: 1,
+        coinsEarned: 0,
         timeSpent: 0,
+        offlineProgress: {
+          lastSeen: new Date().toISOString(),
+          coinsPerMinute: 0,
+          expPerMinute: 0,
+        },
       },
 
       // Actions
       initializeGame: () => {
         const now = new Date();
-        const lastRefresh = get().lastMissionRefresh;
+        const lastRefresh = get().lastMissionsRefresh;
 
         // Vérifier si nous devons rafraîchir les missions journalières
         if (!lastRefresh || new Date(lastRefresh).getDate() !== now.getDate()) {
           set({
-            dailyMissions: generateDailyMissions(),
-            lastMissionRefresh: now.toISOString(),
+            dailyMissions: generateDailyMissions(get().playerLevel),
+            lastMissionsRefresh: now.toISOString(),
           });
+        }
+
+        // Calculer les progrès hors ligne
+        const lastSeen = get().stats.offlineProgress.lastSeen;
+        if (lastSeen) {
+          const offlineProgress = get().calculateOfflineProgress(lastSeen);
+          if (offlineProgress.time > 0) {
+            get().addCoins(offlineProgress.coins);
+            get().addPlayerExp(offlineProgress.exp);
+
+            // Mettre à jour le timestamp
+            set((state) => ({
+              stats: {
+                ...state.stats,
+                offlineProgress: {
+                  ...state.stats.offlineProgress,
+                  lastSeen: now.toISOString(),
+                },
+              },
+            }));
+          }
         }
       },
 
@@ -391,189 +458,235 @@ export const useGameStore = create<GameState>()(
         set({
           enemies: generateWave(currentWave),
           waveInProgress: true,
+          currentEnemiesKilled: 0,
         });
-      },
-
-      // Cliquer sur l'écran pour attaquer
-      clickAttack: (x: number, y: number) => {
-        const enemies = get().enemies;
-        const clickDamage = get().clickDamage * get().clickMultiplier;
-        const stats = { ...get().stats };
-
-        // Mise à jour des statistiques
-        stats.totalClicks++;
-
-        // Chercher l'ennemi le plus proche du clic
-        let closestEnemy: Enemy | null = null;
-        let closestDistance = Infinity;
-
-        enemies.forEach((enemy) => {
-          const distance = Math.sqrt(
-            Math.pow(enemy.position.x - x, 2) +
-              Math.pow(enemy.position.y - y, 2)
-          );
-
-          // Si on est dans un rayon de 50px de l'ennemi
-          if (distance < 50 * enemy.size && distance < closestDistance) {
-            closestDistance = distance;
-            closestEnemy = enemy;
-          }
-        });
-
-        // Si on a trouvé un ennemi proche, on lui inflige des dégâts
-        if (closestEnemy) {
-          const updatedEnemies = enemies
-            .map((enemy) => {
-              if (enemy.id === closestEnemy!.id) {
-                const newHealth = enemy.health - clickDamage;
-
-                // Si l'ennemi est détruit
-                if (newHealth <= 0) {
-                  // Ajouter les récompenses
-                  set({
-                    credits: get().credits + enemy.value,
-                    stats: {
-                      ...stats,
-                      enemiesDestroyed: stats.enemiesDestroyed + 1,
-                      creditsEarned: stats.creditsEarned + enemy.value,
-                    },
-                  });
-
-                  // Mettre à jour les missions
-                  get().updateMissionProgress("destroy", 1);
-                  get().updateMissionProgress("credits", enemy.value);
-
-                  // Ajouter de l'XP
-                  get().addExperience(enemy.value / 2);
-
-                  // Retirer l'ennemi de la liste
-                  return null;
-                }
-
-                // Sinon, on met à jour sa santé
-                return {
-                  ...enemy,
-                  health: newHealth,
-                };
-              }
-
-              return enemy;
-            })
-            .filter(Boolean) as Enemy[]; // Retirer les ennemis détruits (null)
-
-          set({ enemies: updatedEnemies });
-
-          // Vérifier si la vague est terminée
-          if (updatedEnemies.length === 0) {
-            get().completeWave();
-          }
-        }
-      },
-
-      // Mettre à jour la position des ennemis (appelé par la boucle de jeu)
-      updateEnemies: () => {
-        const enemies = get().enemies;
-
-        if (enemies.length === 0 && get().waveInProgress) {
-          get().completeWave();
-          return;
-        }
-
-        const updatedEnemies = enemies.map((enemy) => {
-          // Déplacer l'ennemi vers le bas
-          return {
-            ...enemy,
-            position: {
-              ...enemy.position,
-              y: enemy.position.y + enemy.speed,
-            },
-          };
-        });
-
-        set({ enemies: updatedEnemies });
       },
 
       // Compléter une vague
       completeWave: () => {
-        const currentWave = get().currentWave;
-        const stats = { ...get().stats };
+        const { currentWave, stats } = get();
+        const newWave = currentWave + 1;
 
-        // Bonus de complétion de vague
-        const waveBonus = 100 + currentWave * 20;
+        // Calculer la progression hors ligne
+        const activeTurrets = get().getCurrentActiveTurrets();
+        const damagePerSecond = activeTurrets.reduce((total, turret) => {
+          return total + turret.damage * turret.fireRate;
+        }, 0);
+
+        // En moyenne, combien de pièces et d'XP par minute ?
+        const avgEnemyValue = 3 + Math.floor(currentWave / 3);
+        const avgEnemyExp = 15 + Math.floor(currentWave / 2);
+        const enemiesPerMinute = Math.min(
+          60,
+          (damagePerSecond * 60) / (10 * Math.pow(1.1, currentWave))
+        );
 
         set({
-          currentWave: currentWave + 1,
+          currentWave: newWave,
           waveInProgress: false,
-          waveCompleted: get().waveCompleted + 1,
-          credits: get().credits + waveBonus,
+          currentEnemiesKilled: 0,
           stats: {
             ...stats,
-            wavesCompleted: stats.wavesCompleted + 1,
-            creditsEarned: stats.creditsEarned + waveBonus,
+            totalWavesCompleted: stats.totalWavesCompleted + 1,
+            highestWave: Math.max(stats.highestWave, newWave),
+            offlineProgress: {
+              lastSeen: new Date().toISOString(),
+              coinsPerMinute: enemiesPerMinute * avgEnemyValue,
+              expPerMinute: enemiesPerMinute * avgEnemyExp,
+            },
           },
         });
 
         // Mettre à jour les missions
         get().updateMissionProgress("wave", 1);
-        get().updateMissionProgress("credits", waveBonus);
-
-        // Ajouter de l'XP
-        get().addExperience(waveBonus);
       },
 
-      // Acheter une amélioration
-      purchaseUpgrade: (
-        type: "clickDamage" | "clickMultiplier" | "autoClicker",
-        level: number = 1
-      ) => {
-        const { credits, clickDamage, clickMultiplier, autoClickers } = get();
+      // Tirer sur un ennemi
+      shootEnemy: (enemyId: string, damage: number) => {
+        const { enemies, stats } = get();
+        const enemy = enemies.find((e) => e.id === enemyId);
 
-        let cost = 0;
+        if (!enemy) return;
 
-        switch (type) {
-          case "clickDamage":
-            cost = 200 * (clickDamage + level);
-            if (credits >= cost) {
-              set({
-                credits: credits - cost,
-                clickDamage: clickDamage + level,
-              });
-              return true;
-            }
-            break;
+        const newHealth = enemy.health - damage;
 
-          case "clickMultiplier":
-            cost = 500 * clickMultiplier;
-            if (credits >= cost) {
-              set({
-                credits: credits - cost,
-                clickMultiplier: clickMultiplier + 0.1,
-              });
-              return true;
-            }
-            break;
+        if (newHealth <= 0) {
+          // L'ennemi est détruit
+          get().addCoins(enemy.value);
+          get().addPlayerExp(enemy.expValue);
 
-          case "autoClicker":
-            cost = 300 * (autoClickers + 1);
-            if (credits >= cost) {
-              set({
-                credits: credits - cost,
-                autoClickers: autoClickers + 1,
-              });
-              return true;
-            }
-            break;
+          set({
+            enemies: enemies.filter((e) => e.id !== enemyId),
+            currentEnemiesKilled: get().currentEnemiesKilled + 1,
+            stats: {
+              ...stats,
+              totalKills: stats.totalKills + 1,
+              coinsEarned: stats.coinsEarned + enemy.value,
+            },
+          });
+
+          // Mettre à jour les missions
+          get().updateMissionProgress("kill", 1);
+
+          // Vérifier si la vague est terminée
+          if (get().enemies.length === 0) {
+            get().completeWave();
+          }
+        } else {
+          // Mettre à jour la santé de l'ennemi
+          set({
+            enemies: enemies.map((e) =>
+              e.id === enemyId ? { ...e, health: newHealth } : e
+            ),
+          });
         }
-
-        return false;
       },
 
-      // Mettre à jour la progression des missions
-      updateMissionProgress: (
-        type: "destroy" | "wave" | "credits",
-        amount: number
-      ) => {
-        const dailyMissions = [...get().dailyMissions];
+      // Améliorer une tourelle
+      upgradeTurret: (turretId: string) => {
+        const { turrets, coins } = get();
+        const turretIndex = turrets.findIndex((t) => t.id === turretId);
+
+        if (turretIndex === -1) return false;
+
+        const turret = turrets[turretIndex];
+        const upgradeCost = turret.upgradeCost;
+
+        if (coins < upgradeCost) return false;
+
+        const updatedTurrets = [...turrets];
+        updatedTurrets[turretIndex] = {
+          ...turret,
+          level: turret.level + 1,
+          damage: Math.floor(turret.damage * 1.2),
+          fireRate: turret.fireRate * 1.1,
+          upgradeCost: Math.floor(upgradeCost * 1.5),
+        };
+
+        set({
+          turrets: updatedTurrets,
+          coins: coins - upgradeCost,
+        });
+
+        // Mettre à jour les missions
+        get().updateMissionProgress("upgrade", 1);
+
+        return true;
+      },
+
+      // Acheter une tourelle
+      purchaseTurret: (turretId: string) => {
+        const { turrets, coins } = get();
+        const turretIndex = turrets.findIndex((t) => t.id === turretId);
+
+        if (turretIndex === -1) return false;
+
+        const turret = turrets[turretIndex];
+
+        if (turret.unlocked || coins < turret.cost) return false;
+
+        const updatedTurrets = [...turrets];
+        updatedTurrets[turretIndex] = {
+          ...turret,
+          unlocked: true,
+        };
+
+        set({
+          turrets: updatedTurrets,
+          coins: coins - turret.cost,
+        });
+
+        return true;
+      },
+
+      // Acheter un vaisseau
+      purchaseSpaceship: (spaceshipId: string) => {
+        const { spaceships, gems } = get();
+        const shipIndex = spaceships.findIndex((s) => s.id === spaceshipId);
+
+        if (shipIndex === -1) return false;
+
+        const spaceship = spaceships[shipIndex];
+
+        if (spaceship.unlocked || gems < spaceship.gemCost) return false;
+
+        const updatedSpaceships = [...spaceships];
+        updatedSpaceships[shipIndex] = {
+          ...spaceship,
+          unlocked: true,
+        };
+
+        set({
+          spaceships: updatedSpaceships,
+          gems: gems - spaceship.gemCost,
+        });
+
+        return true;
+      },
+
+      // Changer de vaisseau
+      switchSpaceship: (spaceshipId: string) => {
+        const { spaceships } = get();
+        const spaceship = spaceships.find((s) => s.id === spaceshipId);
+
+        if (!spaceship || !spaceship.unlocked) return;
+
+        set({ currentSpaceshipId: spaceshipId });
+      },
+
+      // Installer une tourelle sur le vaisseau actif
+      installTurret: (turretId: string, spaceshipId: string) => {
+        const { spaceships, turrets } = get();
+        const shipIndex = spaceships.findIndex((s) => s.id === spaceshipId);
+
+        if (shipIndex === -1) return false;
+
+        const spaceship = spaceships[shipIndex];
+        const turret = turrets.find((t) => t.id === turretId);
+
+        if (!spaceship.unlocked || !turret || !turret.unlocked) return false;
+        if (spaceship.activeTurrets.includes(turretId)) return true; // Déjà installée
+        if (spaceship.activeTurrets.length >= spaceship.maxTurrets)
+          return false;
+
+        const updatedSpaceships = [...spaceships];
+        updatedSpaceships[shipIndex] = {
+          ...spaceship,
+          activeTurrets: [...spaceship.activeTurrets, turretId],
+        };
+
+        set({ spaceships: updatedSpaceships });
+
+        return true;
+      },
+
+      // Enlever une tourelle du vaisseau actif
+      removeTurret: (turretId: string, spaceshipId: string) => {
+        const { spaceships } = get();
+        const shipIndex = spaceships.findIndex((s) => s.id === spaceshipId);
+
+        if (shipIndex === -1) return false;
+
+        const spaceship = spaceships[shipIndex];
+
+        if (!spaceship.activeTurrets.includes(turretId)) return false;
+
+        const updatedSpaceships = [...spaceships];
+        updatedSpaceships[shipIndex] = {
+          ...spaceship,
+          activeTurrets: spaceship.activeTurrets.filter(
+            (id) => id !== turretId
+          ),
+        };
+
+        set({ spaceships: updatedSpaceships });
+
+        return true;
+      },
+
+      // Mise à jour de la progression des missions
+      updateMissionProgress: (type, amount) => {
+        const { dailyMissions } = get();
 
         const updatedMissions = dailyMissions.map((mission) => {
           if (mission.type === type && !mission.completed) {
@@ -603,172 +716,224 @@ export const useGameStore = create<GameState>()(
 
       // Réclamer la récompense d'une mission
       claimMissionReward: (missionId: string) => {
-        const dailyMissions = [...get().dailyMissions];
+        const { dailyMissions } = get();
         const mission = dailyMissions.find((m) => m.id === missionId);
 
-        if (mission && mission.completed) {
-          // Ajouter les récompenses
-          set({
-            credits: get().credits + mission.reward.credits,
-            minerals: get().minerals + mission.reward.minerals,
-            energy: get().energy + mission.reward.energy,
-            dailyMissions: dailyMissions.filter((m) => m.id !== missionId),
-          });
+        if (!mission || !mission.completed) return false;
 
-          return true;
-        }
+        // Ajouter les récompenses
+        get().addCoins(mission.reward.coins);
+        get().addGems(mission.reward.gems);
+        get().addPlayerExp(mission.reward.exp);
 
-        return false;
+        // Retirer la mission
+        set({
+          dailyMissions: dailyMissions.filter((m) => m.id !== missionId),
+        });
+
+        return true;
       },
 
-      // Ajouter de l'expérience
-      addExperience: (amount: number) => {
-        const { playerXp, playerXpToNextLevel, playerLevel } = get();
-        const newXp = playerXp + amount;
+      // Ajouter de l'expérience au joueur
+      addPlayerExp: (amount: number) => {
+        const { playerExp, playerLevel, expToNextLevel } = get();
+        const newExp = playerExp + amount;
 
         // Si on monte de niveau
-        if (newXp >= playerXpToNextLevel) {
+        if (newExp >= expToNextLevel) {
+          const remainingExp = newExp - expToNextLevel;
           const newLevel = playerLevel + 1;
-          const nextLevelXp = playerXpToNextLevel * 1.5;
+          const nextLevelExp = Math.floor(expToNextLevel * 1.2);
 
           set({
             playerLevel: newLevel,
-            playerXp: newXp - playerXpToNextLevel,
-            playerXpToNextLevel: nextLevelXp,
-            // Bonus de niveau
-            credits: get().credits + newLevel * 100,
-            minerals: get().minerals + newLevel * 20,
-            energy: get().energy + newLevel * 20,
+            playerExp: remainingExp,
+            expToNextLevel: nextLevelExp,
           });
 
-          // Débloquer des vaisseaux en fonction du niveau
-          const ships = [...get().ships];
-          const updatedShips = ships.map((ship) => {
-            if (!ship.unlocked) {
-              if (
-                (ship.id === "cruiser-1" && newLevel >= 3) ||
-                (ship.id === "destroyer-1" && newLevel >= 8) ||
-                (ship.id === "miner-1" && newLevel >= 2) ||
-                (ship.id === "collector-1" && newLevel >= 4) ||
-                (ship.id === "generator-1" && newLevel >= 5)
-              ) {
-                return { ...ship, unlocked: true };
-              }
-            }
-            return ship;
-          });
+          // Bonus de niveau
+          get().addCoins(newLevel * 100);
 
-          set({ ships: updatedShips });
+          // Vérifier si on débloque de nouvelles tourelles
+          get().checkTurretUnlocks(newLevel);
         } else {
-          set({ playerXp: newXp });
+          set({ playerExp: newExp });
         }
       },
 
-      // Acheter un vaisseau
-      purchaseShip: (shipId: string) => {
-        const ships = [...get().ships];
-        const ship = ships.find((s) => s.id === shipId);
+      // Vérifier les déblocages de tourelles selon le niveau
+      checkTurretUnlocks: (level: number) => {
+        const { turrets } = get();
+        const updatedTurrets = [...turrets];
 
-        if (ship && ship.unlocked && !get().activeShips.includes(shipId)) {
-          if (get().credits >= ship.cost) {
-            set({
-              credits: get().credits - ship.cost,
-              activeShips: [...get().activeShips, shipId],
-            });
-            return true;
+        // Débloquer des tourelles selon le niveau
+        if (
+          level >= 3 &&
+          !turrets.find((t) => t.id === "rapid-turret")?.unlocked
+        ) {
+          const index = turrets.findIndex((t) => t.id === "rapid-turret");
+          if (index !== -1) {
+            updatedTurrets[index] = {
+              ...updatedTurrets[index],
+              unlocked: true,
+            };
           }
         }
 
-        return false;
-      },
-
-      // Améliorer un vaisseau
-      upgradeShip: (shipId: string) => {
-        const ships = [...get().ships];
-        const shipIndex = ships.findIndex((s) => s.id === shipId);
-
-        if (shipIndex !== -1) {
-          const ship = ships[shipIndex];
-          const upgradeCost = ship.cost * (ship.level + 1);
-
-          if (get().credits >= upgradeCost) {
-            // Améliorer les statistiques du vaisseau
-            const upgradedShip = { ...ship };
-
-            upgradedShip.level += 1;
-            upgradedShip.cost = upgradeCost;
-
-            if (upgradedShip.damage) {
-              upgradedShip.damage = Math.ceil(upgradedShip.damage * 1.2);
-            }
-
-            if (upgradedShip.health) {
-              upgradedShip.health = Math.ceil(upgradedShip.health * 1.2);
-            }
-
-            if (upgradedShip.fireRate) {
-              upgradedShip.fireRate = parseFloat(
-                (upgradedShip.fireRate * 1.1).toFixed(2)
-              );
-            }
-
-            if (upgradedShip.production) {
-              upgradedShip.production = {
-                ...upgradedShip.production,
-                amount: Math.ceil(upgradedShip.production.amount * 1.3),
-              };
-            }
-
-            ships[shipIndex] = upgradedShip;
-
-            set({
-              credits: get().credits - upgradeCost,
-              ships,
-            });
-
-            return true;
+        if (
+          level >= 7 &&
+          !turrets.find((t) => t.id === "heavy-turret")?.unlocked
+        ) {
+          const index = turrets.findIndex((t) => t.id === "heavy-turret");
+          if (index !== -1) {
+            updatedTurrets[index] = {
+              ...updatedTurrets[index],
+              unlocked: true,
+            };
           }
         }
 
-        return false;
-      },
-
-      // Activer un vaisseau
-      activateShip: (shipId: string) => {
-        if (!get().activeShips.includes(shipId)) {
-          set({
-            activeShips: [...get().activeShips, shipId],
-          });
+        if (
+          level >= 12 &&
+          !turrets.find((t) => t.id === "missile-launcher")?.unlocked
+        ) {
+          const index = turrets.findIndex((t) => t.id === "missile-launcher");
+          if (index !== -1) {
+            updatedTurrets[index] = {
+              ...updatedTurrets[index],
+              unlocked: true,
+            };
+          }
         }
+
+        set({ turrets: updatedTurrets });
       },
 
-      // Désactiver un vaisseau
-      deactivateShip: (shipId: string) => {
-        set({
-          activeShips: get().activeShips.filter((id) => id !== shipId),
+      // Obtenir les tourelles actives sur le vaisseau courant
+      getCurrentActiveTurrets: () => {
+        const { currentSpaceshipId, spaceships, turrets } = get();
+        const currentShip = spaceships.find((s) => s.id === currentSpaceshipId);
+
+        if (!currentShip) return [];
+
+        return currentShip.activeTurrets
+          .map((turretId) => {
+            return turrets.find((t) => t.id === turretId);
+          })
+          .filter((t) => t !== undefined) as Turret[];
+      },
+
+      // Calculer les progrès hors ligne
+      calculateOfflineProgress: (lastSeenTime: string) => {
+        const lastSeen = new Date(lastSeenTime);
+        const now = new Date();
+        const diffMs = now.getTime() - lastSeen.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+        const { offlineProgress } = get().stats;
+
+        // Limite de temps offline (max 24h)
+        const cappedMinutes = Math.min(diffMinutes, 24 * 60);
+
+        return {
+          coins: Math.floor(offlineProgress.coinsPerMinute * cappedMinutes),
+          exp: Math.floor(offlineProgress.expPerMinute * cappedMinutes),
+          time: cappedMinutes,
+        };
+      },
+
+      // Ajouter des pièces
+      addCoins: (amount: number) => {
+        set((state) => ({ coins: state.coins + amount }));
+      },
+
+      // Ajouter des gemmes
+      addGems: (amount: number) => {
+        set((state) => ({ gems: state.gems + amount }));
+      },
+
+      // Mettre à jour la position des ennemis
+      updateEnemyPositions: (deltaTime: number) => {
+        const { enemies } = get();
+
+        if (enemies.length === 0) return;
+
+        const updatedEnemies = enemies.map((enemy) => {
+          // Déplacer les ennemis de droite à gauche
+          return {
+            ...enemy,
+            position: {
+              ...enemy.position,
+              x: enemy.position.x - enemy.speed * 60 * deltaTime,
+            },
+          };
         });
+
+        // Vérifier si des ennemis ont atteint le bord gauche de l'écran
+        const enemiesOnScreen = updatedEnemies.filter(
+          (enemy) => enemy.position.x > -50
+        );
+
+        set({ enemies: enemiesOnScreen });
+
+        // Si tous les ennemis sont détruits ou hors écran, terminer la vague
+        if (enemiesOnScreen.length === 0 && get().waveInProgress) {
+          get().completeWave();
+        }
+      },
+
+      // Attaque par clic
+      clickAttack: (x: number, y: number) => {
+        const { enemies } = get();
+
+        // Si aucun ennemi, on sort immédiatement
+        if (enemies.length === 0) return;
+
+        // Trouver l'ennemi le plus proche explicitement
+        let closestIndex = -1;
+        let closestDistance = Infinity;
+
+        for (let i = 0; i < enemies.length; i++) {
+          const dx = enemies[i].position.x - x;
+          const dy = enemies[i].position.y - y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < 50 && distance < closestDistance) {
+            closestDistance = distance;
+            closestIndex = i;
+          }
+        }
+
+        // Si on a trouvé un ennemi à portée
+        if (closestIndex !== -1) {
+          // Obtenir la tourelle active la plus puissante pour les dégâts du clic
+          const activeTurrets = get().getCurrentActiveTurrets();
+          const highestDamage =
+            activeTurrets.length > 0
+              ? Math.max(...activeTurrets.map((t) => t.damage))
+              : 10; // Dégâts par défaut si aucune tourelle
+
+          // Utiliser directement l'ennemi trouvé à son index
+          const targetId = enemies[closestIndex].id;
+          get().shootEnemy(targetId, highestDamage);
+        }
       },
     }),
     {
-      name: "space-clicker-storage", // Nom du stockage localStorage
+      name: "space-idle-storage",
       partialize: (state) => ({
+        playerName: state.playerName,
         playerLevel: state.playerLevel,
-        playerXp: state.playerXp,
-        playerXpToNextLevel: state.playerXpToNextLevel,
-        credits: state.credits,
-        minerals: state.minerals,
-        energy: state.energy,
+        playerExp: state.playerExp,
+        expToNextLevel: state.expToNextLevel,
+        coins: state.coins,
+        gems: state.gems,
         currentWave: state.currentWave,
-        waveCompleted: state.waveCompleted,
-        autoClickers: state.autoClickers,
-        autoClickerDamage: state.autoClickerDamage,
-        autoClickInterval: state.autoClickInterval,
-        clickDamage: state.clickDamage,
-        clickMultiplier: state.clickMultiplier,
-        ships: state.ships,
-        activeShips: state.activeShips,
+        spaceships: state.spaceships,
+        currentSpaceshipId: state.currentSpaceshipId,
+        turrets: state.turrets,
         dailyMissions: state.dailyMissions,
-        lastMissionRefresh: state.lastMissionRefresh,
+        lastMissionsRefresh: state.lastMissionsRefresh,
         stats: state.stats,
       }),
     }
